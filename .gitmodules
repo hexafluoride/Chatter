@@ -1,0 +1,3 @@
+[submodule "botty"]
+	path = botty
+	url = https://github.com/hexafluoride/botty
