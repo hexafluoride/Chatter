@@ -3,13 +3,32 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
+using System.Web;
 
 namespace Chatter
 {
     class MainClass
     {
+        public static Dictionary<string, DateTime> SeenNicks = new Dictionary<string, DateTime>();
+        public static YoutubeResolver Youtube = new YoutubeResolver();
+        static Random rnd = new Random();
+        static ConfigStore Config = new ConfigStore();
+
         public static void Main(string[] args)
         {
+            Config.Add("parse_links", false);
+            Config.Add("autojoin", true);
+            Config.Add("respond_chance", 0.05);
+            Config.Add("conversation_length", 2);
+            Config.Add("conversation_decay_chance", 0.8);
+            Config.Add("conversation_decay_time", 20);
+            Config.Add("conversation_start_chance_highlight", 0.5);
+            Config.Add("conversation_start_chance_command", 0.7);
+            Config.Add("conversation_start_chance_question", 0.7);
+
+            Config.ProtectAdded = false;
+
             string join_default = "#topkek-test";
 
             QuestionAggregator aggre = new QuestionAggregator();
@@ -17,8 +36,6 @@ namespace Chatter
 
             IrcClient client = new IrcClient();
             client.Connect();
-
-            Random rnd = new Random();
 
             string conversing_with = "";
             int conversation_length = 0;
@@ -39,6 +56,92 @@ namespace Chatter
                     string source = msg.Prefix.Nick;
                     Console.WriteLine("{0} -> {1} from {2}", message, target, source);
 
+                    if (!SeenNicks.ContainsKey(source))
+                    {
+                        Console.WriteLine("Added {0} to recent nick list.", source);
+                    }
+
+                    SeenNicks[source] = DateTime.Now;
+
+                    bool authed = msg.Prefix.Host == "fluoride" && msg.Prefix.Nick == "h";
+
+                    if (message.Contains("http") && ((bool)Config.Get("parse_links")))
+                    {
+                        try
+                        {
+                            System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
+
+                            Regex regex = new Regex(@"(?<Protocol>\w+):\/\/(?<Domain>[\w@][\w-.:@]+)\/?[\w\.~?=%&=\-@/$,]*");
+
+                            if (regex.IsMatch(message))
+                            {
+                                string url = regex.Matches(message)[0].Value;
+
+                                var task = LinkResolver.GetSummary(url);
+                                task.Wait();
+                                string summary = task.Result.Value;
+
+                                if (summary != "-")
+                                {
+                                    summary = HttpUtility.HtmlDecode(summary);
+
+                                    sw.Stop();
+
+                                    client.SendPrivateMessage(target, string.Format("{0} ({1}s)", summary, sw.Elapsed.TotalSeconds.ToString("0.00")));
+                                }
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (message.StartsWith(".yt") || message.StartsWith(".youtube"))
+                    {
+                        string rest = string.Join(" ", message.Split(' ').Skip(1));
+                        var result = Youtube.Search(rest);
+
+                        if (result != "-")
+                        {
+                            client.SendPrivateMessage(target, result);
+                        }
+                    }
+                    if (message.StartsWith(".config"))
+                    {
+                        var words = message.Split(' ').Skip(1).ToList();
+                        string name = words.Skip(1).FirstOrDefault();
+                        string arg = string.Join(" ", words.Skip(2)).Trim();
+
+                        if (words[0] == "get")
+                        {
+                            var value = Config.Get(name);
+                            if (value != null)
+                                client.SendPrivateMessage(target, name + " is " + value.ToString());
+                            else
+                                client.SendPrivateMessage(target, name + " doesn't exist. Try using .config set " + name + " <value>."); 
+                        }
+                        if (words[0] == "set")
+                        {
+                            var option = Config.GetOption(name);
+
+                            if (option == null)
+                                Config.Add(name, arg);
+                            else if((option.Protected && authed) || !option.Protected)
+                                Config.Set(name, arg);
+                            else
+                                client.SendPrivateMessage(target, name + " is a protected value!");
+                        }
+                        if (words[0] == "dump")
+                        {
+                            if (authed)
+                            {
+                                foreach (var option in Config.Options)
+                                {
+                                    client.SendPrivateMessage(target, option.Name + " is \"" + option.Value.ToString() + "\"" + (option.Protected ? " (protected)" : ""));
+                                }
+                            }
+                        }
+                    }
                     if (message.StartsWith(".answer"))
                     {
                         string question = message.Substring(".answer".Length).Trim();
@@ -46,10 +149,10 @@ namespace Chatter
 
                         if (pair != null && pair.Response != null)
                         {
-                            client.SendPrivateMessage(target, pair.Response.Content.Replace("{0}", source));
+                            client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                             conversing_with = source;
-                            if(rnd.NextDouble() > 0.5)
-                                conversation_length = 1;
+                            if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_command"))
+                                conversation_length = (int)Config.Get("conversation_length");
                             last_conversed = DateTime.Now;
                         }
                     }
@@ -59,30 +162,30 @@ namespace Chatter
 
                         if (pair != null && pair.Response != null)
                         {
-                            client.SendPrivateMessage(target, pair.Response.Content.Replace("{0}", source));
+                            client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                             conversing_with = source;
-                            if(rnd.NextDouble() > 0.7)
-                                conversation_length = 1;
+                            if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_highlight"))
+                                conversation_length = (int)Config.Get("conversation_length");
                             last_conversed = DateTime.Now;
                         }
                     }
                     else if (new LogLine() { Content = message }.IsQuestion())
                     {
-                        if (rnd.NextDouble() < 0.05)
+                        if (rnd.NextDouble() < (double)Config.Get("respond_chance"))
                         {
                             var pair = aggre.GetPair(message);
 
                             if (pair != null && pair.Response != null)
                             {
-                                client.SendPrivateMessage(target, pair.Response.Content.Replace("{0}", source));
+                                client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                                 conversing_with = source;
-                                if(rnd.NextDouble() > 0.5)
-                                    conversation_length = 1;
+                                if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_question"))
+                                    conversation_length = (int)Config.Get("conversation_length");
                                 last_conversed = DateTime.Now;
                             }
                         }
                     }
-                    else if (conversation_length > 0 && (DateTime.Now - last_conversed).TotalSeconds < 20)
+                    else if (conversation_length > 0 && (DateTime.Now - last_conversed).TotalSeconds < (int)Config.Get("conversation_decay_time"))
                     {
                         if (source == conversing_with)
                         {
@@ -90,9 +193,9 @@ namespace Chatter
 
                             if (pair != null && pair.Response != null)
                             {
-                                client.SendPrivateMessage(target, pair.Response.Content.Replace("{0}", source));
+                                client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
 
-                                if (rnd.NextDouble() > 0.2)
+                                if (rnd.NextDouble() < (double)Config.Get("conversation_decay_chance"))
                                     conversation_length--;
                             }
                         }
@@ -118,6 +221,58 @@ namespace Chatter
 //                var pair = aggre.GetPair(Console.ReadLine());
 //                Console.WriteLine(pair.Response.Content);
 //            }
+        }
+
+        public static string Nickify(string text)
+        {
+            var temp = new List<KeyValuePair<string, DateTime>>();
+
+            foreach (var pair in SeenNicks)
+                if ((DateTime.Now - pair.Value).TotalHours > 1)
+                    temp.Add(pair);
+
+            foreach (var pair in temp)
+            {
+                Console.WriteLine("Removed {0} from seen nicks list.", pair.Key);
+                SeenNicks.Remove(pair.Key);
+            }
+
+            var matches = Regex.Matches(text, "\\{r(.*?.*?.*?)\\}");
+
+            List<string> strings = new List<string>();
+
+            foreach (Match match in matches)
+            {
+                strings.Add(match.Groups[0].ToString());
+            }
+
+            strings = strings.Distinct().ToList();
+            var nicks = SeenNicks.ToList();
+
+            var str_new = strings.Select<string, KeyValuePair<string, string>>(s =>
+            {
+                if(!nicks.Any())
+                {
+                    if(!SeenNicks.Any())
+                        return new KeyValuePair<string, string>("", "");
+                    else
+                        return new KeyValuePair<string, string>(s, SeenNicks.ElementAt(rnd.Next(SeenNicks.Count)).Key);
+                }
+
+                var ret = nicks.First().Key;
+                nicks.RemoveAt(0);
+                return new KeyValuePair<string, string>(s, ret);
+            });
+
+            foreach (var pair in str_new)
+            {
+                if (pair.Key == "")
+                    continue;
+
+                text = text.Replace(pair.Key, pair.Value);
+            }
+
+            return text;
         }
     }
 }
