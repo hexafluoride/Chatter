@@ -114,8 +114,6 @@ namespace Chatter
                             else
                                 client.SendAction(target, string.Format("heals {0} (3+{1} HP! Critical heal!)", nick, Random.Next(250, 300)));
                         }
-
-                        return;
                     }
                     if (message.StartsWith(".yt") || message.StartsWith(".youtube"))
                     {
