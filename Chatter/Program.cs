@@ -12,7 +12,7 @@ namespace Chatter
     {
         public static Dictionary<string, DateTime> SeenNicks = new Dictionary<string, DateTime>();
         public static YoutubeResolver Youtube = new YoutubeResolver();
-        static Random rnd = new Random();
+        static Random Random = new Random();
         static ConfigStore Config = new ConfigStore();
 
         public static void Main(string[] args)
@@ -95,7 +95,28 @@ namespace Chatter
                         {
                         }
                     }
+                    if (MatchesHealRequest(message))
+                    {
+                        string nick = msg.Prefix.Nick;
 
+                        double rnd = Random.NextDouble();
+                        if (message.ToLower().EndsWith("slut") || message.ToLower().EndsWith("whore") || message.ToLower().EndsWith("bitch"))
+                        {
+                            if (rnd < 0.9 && nick != "h")
+                                client.SendAction(target, string.Format("h-heals {0} (3+{1} HP~!)", nick, Random.Next(90, 110)));
+                            else
+                                client.SendAction(target, string.Format("h-heals {0} (3+{1} HP~! Critical heal~!)", nick, Random.Next(250, 300)));
+                        }
+                        else
+                        {
+                            if (rnd < 0.9 && nick != "h")
+                                client.SendAction(target, string.Format("heals {0} (3+{1} HP!)", nick, Random.Next(90, 110)));
+                            else
+                                client.SendAction(target, string.Format("heals {0} (3+{1} HP! Critical heal!)", nick, Random.Next(250, 300)));
+                        }
+
+                        return;
+                    }
                     if (message.StartsWith(".yt") || message.StartsWith(".youtube"))
                     {
                         string rest = string.Join(" ", message.Split(' ').Skip(1));
@@ -151,7 +172,7 @@ namespace Chatter
                         {
                             client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                             conversing_with = source;
-                            if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_command"))
+                            if(Random.NextDouble() < (double)Config.Get("conversation_start_chance_command"))
                                 conversation_length = (int)Config.Get("conversation_length");
                             last_conversed = DateTime.Now;
                         }
@@ -164,14 +185,14 @@ namespace Chatter
                         {
                             client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                             conversing_with = source;
-                            if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_highlight"))
+                            if(Random.NextDouble() < (double)Config.Get("conversation_start_chance_highlight"))
                                 conversation_length = (int)Config.Get("conversation_length");
                             last_conversed = DateTime.Now;
                         }
                     }
                     else if (new LogLine() { Content = message }.IsQuestion())
                     {
-                        if (rnd.NextDouble() < (double)Config.Get("respond_chance"))
+                        if (Random.NextDouble() < (double)Config.Get("respond_chance"))
                         {
                             var pair = aggre.GetPair(message);
 
@@ -179,7 +200,7 @@ namespace Chatter
                             {
                                 client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
                                 conversing_with = source;
-                                if(rnd.NextDouble() < (double)Config.Get("conversation_start_chance_question"))
+                                if(Random.NextDouble() < (double)Config.Get("conversation_start_chance_question"))
                                     conversation_length = (int)Config.Get("conversation_length");
                                 last_conversed = DateTime.Now;
                             }
@@ -195,7 +216,7 @@ namespace Chatter
                             {
                                 client.SendPrivateMessage(target, Nickify(pair.Response.Content.Replace("{0}", source)));
 
-                                if (rnd.NextDouble() < (double)Config.Get("conversation_decay_chance"))
+                                if (Random.NextDouble() < (double)Config.Get("conversation_decay_chance"))
                                     conversation_length--;
                             }
                         }
@@ -221,6 +242,42 @@ namespace Chatter
 //                var pair = aggre.GetPair(Console.ReadLine());
 //                Console.WriteLine(pair.Response.Content);
 //            }
+        }
+
+        static bool MatchesHealRequest(string msg)
+        {
+            msg = msg.ToLower();
+
+            if (msg.Contains("heal"))
+            {
+                int heal_index = msg.IndexOf("heal");
+
+                if (ContainsBefore(msg, "heal", "don't") || ContainsBefore(msg, "heal", "do not"))
+                    return false;
+
+                if (ContainsBefore(msg, "heal", "pls") ||
+                    ContainsBefore(msg, "pls", "heal") ||
+                    ContainsBefore(msg, "heal", "please") ||
+                    ContainsBefore(msg, "me", "heal"))
+                    return true;
+
+                if (msg.Split(' ').Count() < 5 && msg.Split(' ').Any(w => w.ToLower() == "heal"))
+                    return true;
+            }
+            else if (msg == "medic")
+                return true;
+            else if (msg.Contains(":(") || msg.Contains(";_;") || msg.Contains(";-;") || msg.Contains(";~;"))
+                return true;
+
+            return false;
+        }
+
+        static bool ContainsBefore(string haystack, string needle, string second)
+        {
+            if (!haystack.Contains(needle) || !haystack.Contains(second))
+                return false;
+
+            return haystack.IndexOf(needle) > haystack.IndexOf(second);
         }
 
         public static string Nickify(string text)
@@ -256,7 +313,7 @@ namespace Chatter
                     if(!SeenNicks.Any())
                         return new KeyValuePair<string, string>("", "");
                     else
-                        return new KeyValuePair<string, string>(s, SeenNicks.ElementAt(rnd.Next(SeenNicks.Count)).Key);
+                        return new KeyValuePair<string, string>(s, SeenNicks.ElementAt(Random.Next(SeenNicks.Count)).Key);
                 }
 
                 var ret = nicks.First().Key;

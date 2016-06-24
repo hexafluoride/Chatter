@@ -48,6 +48,11 @@ namespace Chatter
             SendIrcMessage(new IrcMessage("PRIVMSG", target + " :" + message));
         }
 
+        public void SendAction(string target, string action)
+        {
+            SendPrivateMessage(target, "\u0001ACTION " + action + "\u0001");
+        }
+
         public void Join(string channel)
         {
             SendIrcMessage(new IrcMessage("JOIN", channel));
